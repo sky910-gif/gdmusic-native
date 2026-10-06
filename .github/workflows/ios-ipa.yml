@@ -1,0 +1,71 @@
+name: Build GDNative IPA (unsigned)
+
+# 云端 macOS 构建纯原生 GD音乐 Pro，产出未签名 IPA。
+# 用 Sideloadly/AltStore + 普通 Apple ID 自签安装（7 天有效）。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main]
+    paths:
+      - '.github/workflows/ios-ipa.yml'
+      - 'project.yml'
+      - 'App/**'
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-14
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pinned XcodeGen (2.38.0)
+        run: |
+          curl -sSL https://github.com/yonaskolb/XcodeGen/releases/download/2.38.0/xcodegen.zip -o /tmp/xcodegen.zip
+          unzip -o /tmp/xcodegen.zip -d /tmp/xg
+          chmod +x /tmp/xg/xcodegen/bin/xcodegen
+          /tmp/xg/xcodegen/bin/xcodegen --version
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Generate Xcode project
+        run: /tmp/xg/xcodegen/bin/xcodegen generate
+
+      - name: Archive (CODE_SIGNING_ALLOWED=NO)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project GDNative.xcodeproj \
+            -scheme GDNative \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath $PWD/build/GDNative.xcarchive \
+            -derivedDataPath $PWD/build/derived \
+            clean archive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      - name: Package unsigned IPA
+        run: |
+          set -e
+          APP_PATH=$(find "$PWD/build/GDNative.xcarchive/Products/Applications" -maxdepth 1 -name "*.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::未找到 .app，archive 可能失败"
+            exit 1
+          fi
+          mkdir -p "$PWD/build/Payload"
+          cp -r "$APP_PATH" "$PWD/build/Payload/"
+          cd "$PWD/build"
+          zip -qr "GDNative-1.0.0-unsigned.ipa" Payload
+          shasum -a 256 "GDNative-1.0.0-unsigned.ipa"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GDNative-unsigned-ipa
+          path: build/*-unsigned.ipa
+          retention-days: 14
+          if-no-files-found: error
