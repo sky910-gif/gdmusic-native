@@ -1,4 +1,5 @@
 import UIKit
+import AVKit
 
 /// 全屏原生播放页：封面 / 歌词（可切换）、进度、上下首、播放模式、音质、AirPlay。
 final class PlayerViewController: UIViewController {
